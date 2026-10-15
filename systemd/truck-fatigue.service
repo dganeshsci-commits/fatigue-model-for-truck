@@ -1,0 +1,22 @@
+[Unit]
+Description=Truck Fatigue and Distraction Detection Service (Raspberry Pi 5)
+After=network.target sound.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/fatigue-model-for-truck
+Environment="PATH=/home/pi/fatigue-model-for-truck/venv/bin:/usr/local/bin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/home/pi/fatigue-model-for-truck/venv/bin/python app.py
+Restart=always
+RestartSec=5s
+SupplementaryGroups=video gpio dialout
+
+# Hardening / Resource Limits
+LimitNOFILE=65535
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target
