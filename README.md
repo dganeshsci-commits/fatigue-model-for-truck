@@ -1,114 +1,162 @@
-# Fatigue Model for Truck (Raspberry Pi 5 Edge ADAS)
+# Truck Intelligence Hub — System Architecture (100 Hz Real-Time Data Flow)
 
 [![Platform](https://img.shields.io/badge/Platform-Raspberry%20Pi%205%20(ARM64)-red.svg)](https://www.raspberrypi.com/products/raspberry-pi-5/)
+[![Microcontroller](https://img.shields.io/badge/MCU-ESP32%20DevKit%20V1-orange.svg)](https://www.espressif.com/)
 [![Runtime](https://img.shields.io/badge/Inference-ONNX%20Runtime%20ARM64-blue.svg)](https://onnxruntime.ai/)
-[![Python](https://img.shields.io/badge/Python-3.9%20%7C%203.10%20%7C%203.11-green.svg)](https://www.python.org/)
+[![Data Flow](https://img.shields.io/badge/Stream-100%20Hz%20Real--Time-success.svg)](https://github.com/dganeshsci-commits/fatigue-model-for-truck)
 [![License](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
 
-A complete, production-grade **Driver Fatigue and Distraction Detection System** specifically engineered for edge deployment on commercial trucks using the **Raspberry Pi 5**.
+An end-to-end, industrial-grade **Edge Telematics & Driver Safety Intelligence System** designed for commercial trucks.
 
-The system utilizes an optimized pipeline of **4 separate ONNX neural network models** with hardware-accelerated ARM NEON SIMD execution, paired with temporal persistence tracking, physical cabin GPIO alerts (active buzzer + high-visibility LED), and seamless Wi-Fi integration with the **FleetLogix Truck Intelligence Hub** dashboard.
+This repository implements the complete system architecture combining an **ESP32 multi-sensor node**, a **Raspberry Pi 5 central processing hub**, **4 ONNX neural networks**, and a live **100 Hz data streaming pipeline** to the Truck Intelligence Hub dashboard.
 
 ---
 
-## Architecture Overview
+## 1. Complete System Architecture
 
 ```
-                      ┌──────────────────────────────────────────────┐
-                      │             Raspberry Pi 5 (Cabin)           │
-                      │                                              │
-                      │  ┌────────────────────────────────────────┐  │
-                      │  │   Camera (USB Webcam / Pi Cam CSI)     │  │
-                      │  └───────────────────┬────────────────────┘  │
-                      │                      │ BGR Frame (320x240)   │
-                      │                      ▼                       │
-                      │  ┌────────────────────────────────────────┐  │
-                      │  │ Model 1: version-slim-320.onnx         │  │
-                      │  │ Ultra-light Face Detector (RFB-320)    │  │
-                      │  └───────────────────┬────────────────────┘  │
-                      │                      │ Face Box + Letterbox  │
-                      │                      ▼                       │
-                      │  ┌────────────────────────────────────────┐  │
-                      │  │ Model 2: PFLD_GhostOne_112_1_opt_sim   │  │
-                      │  │ 98-Point Facial Landmark Regressor     │  │
-                      │  └───────┬──────────────────────┬─────────┘  │
-                      │          │                      │            │
-                      │          ▼                      ▼            │
-                      │  ┌───────────────┐      ┌───────────────┐    │
-                      │  │ Model 3:      │      │ Model 4:      │    │
-                      │  │ eye_model     │      │ mouth_model   │    │
-                      │  └───────┬───────┘      └───────┬───────┘    │
-                      │          │ EAR/Eye              │ MAR/Yawn   │
-                      │          └───────────┬──────────┘            │
-                      │                      ▼                       │
-                      │  ┌────────────────────────────────────────┐  │
-                      │  │ Temporal Fatigue & Distraction Tracker │  │
-                      │  │ - Natural Blink vs Microsleep Filter   │  │
-                      │  │ - Rising-Edge Yawn Counter             │  │
-                      │  │ - Head Pose Angle Estimator            │  │
-                      │  └───────────────────┬────────────────────┘  │
-                      │                      │                       │
-                      │         ┌────────────┴────────────┐          │
-                      │         ▼                         ▼          │
-                      │  ┌───────────────┐         ┌──────────────┐  │
-                      │  │ GPIO Buzzer   │         │ HTTP API     │  │
-                      │  │ & Alert LED   │         │ & Stream     │  │
-                      │  └───────────────┘         └──────┬───────┘  │
-                      └───────────────────────────────────┼──────────┘
-                                                          │ Wi-Fi / LAN
-                                                          ▼
-                                            ┌────────────────────────┐
-                                            │ Truck Intelligence Hub │
-                                            │   Fleet Dashboard      │
-                                            └────────────────────────┘
+┌─────────────────────────┐          ┌────────────────────────────────────────────────────────┐
+│   Camera (USB)          │          │                         ESP32                          │
+│   • Driver Monitoring   │          │                                                        │
+│   • 4 ONNX Models       │          │   ┌─────────────┐   ┌───────────────┐  ┌───────────┐   │
+│   • Drowsiness/Yawning  │          │   │ BNO085 IMU  │   │  Ultrasonic   │  │   RFID    │   │
+└────────────┬────────────┘          │   │ (I2C 21/22) │   │ (GPIO 5 / 18) │  │  (RC522)  │   │
+             │ USB                   │   └──────┬──────┘   └───────┬───────┘  └─────┬─────┘   │
+             ▼                       └──────────┼──────────────────┼────────────────┼─────────┘
+┌───────────────────────────────────────────────┴──────────────────┴────────────────┴─────────┐
+│                                    Raspberry Pi 5 Hub                                       │
+│                                                                                             │
+│  • Reads camera over USB (30–60 FPS)                                                        │
+│  • Reads ESP32 over High-Speed Serial / UART at 115200 bps (100 Hz)                         │
+│  • Ingests Phone GPS over Wi-Fi (Latitude, Longitude, Speed, Heading)                       │
+│  • Runs 4 ONNX Neural Models (Face Detection, 98 Landmarks, Eye State, Mouth/Yawn)          │
+│  • Runs IMU Event Classifier (Harsh Braking, Harsh Acceleration, Sharp Cornering)           │
+│  • Multi-Sensor Fusion Engine generates unified JSON Payload @ 100 Hz                       │
+│  • Logs time-series data & safety events to SQLite Database                                 │
+│  • Broadcasts live 100 Hz JSON Stream over Wi-Fi (TCP / WebSocket / HTTP)                   │
+└───────────────────────────────────────────────┬─────────────────────────────────────────────┘
+                                                │ Wi-Fi (JSON @ 100 Hz)
+                                                ▼
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                          Truck Intelligence Hub — Dashboard / Display                       │
+│                                                                                             │
+│  • Driver Fatigue Status (Normal / Drowsy / Critical with EAR, MAR, Blink & Yawn counters)  │
+│  • Real-time IMU Motion Gauges & Charts (Accel X/Y/Z, Gyro X/Y/Z, Roll, Pitch, Yaw)        │
+│  • Harsh Driving Maneuver Alerts (Harsh Accel, Brake, Sharp Corner, Vibration)              │
+│  • Ultrasonic Fuel Tank Level (% Level, Volume in Litres, Raw distance in cm)               │
+│  • Live GPS Location, Speed Gauge, Route Tracking & Geofencing                              │
+│  • Driver Identification & Authentication via RFID Card                                     │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4 Separate ONNX Models
+## 2. Hardware Wiring & Interconnects
 
-All 4 ONNX models are stored in [`models/`](models/):
-
-| Model File | Task | Input Shape | Input Normalization | Output |
+### ESP32 Multi-Sensor Node
+| Sensor | Interface | Sensor Pin | ESP32 GPIO | Description |
 | :--- | :--- | :--- | :--- | :--- |
-| **`version-slim-320.onnx`** | Face Detection | `[1, 3, 240, 320]` | `(img - 127) / 128` | Face bounding boxes & probabilities |
-| **`PFLD_GhostOne_112_1_opt_sim.onnx`** | 98 Facial Landmarks | `[1, 3, 112, 112]` | `img / 255.0` | 98 landmark (x, y) coordinates |
-| **`eye_model.onnx`** | Eye State Classifier | `[1, 3, 64, 64]` | `img / 255.0` | Class 0: Open, Class 1: Closed |
-| **`mouth_model.onnx`** | Mouth / Yawn Classifier | `[1, 3, 64, 64]` | `img / 255.0` | Class 0: Yawn, Class 1: Normal |
+| **BNO085 9-DOF IMU** | I²C | `SDA` | **GPIO 21** | 100 Hz 3-Axis Accel, Gyro & Orientation |
+| | I²C | `SCL` | **GPIO 22** | I2C Clock (400 kHz Fast Mode) |
+| | Power | `VIN` / `GND` | `3.3V` / `GND` | Breakout Power Supply |
+| **HC-SR04 Ultrasonic** | GPIO | `TRIG` | **GPIO 5** | Trigger Pulse (10 µs) |
+| | GPIO | `ECHO` | **GPIO 18** | Echo Duration (Fuel level distance) |
+| | Power | `VCC` / `GND` | `5V` / `GND` | Voltage supply (use divider on ECHO) |
+| **RC522 RFID Reader** | SPI | `SCK` | **GPIO 14** | SPI Clock |
+| | SPI | `MISO` | **GPIO 12** | Master In Slave Out |
+| | SPI | `MOSI` | **GPIO 13** | Master Out Slave In |
+| | SPI | `CS` / `SDA` | **GPIO 15** | Chip Select |
+| | Reset | `RST` | **GPIO 4** | Reset Pin |
 
-For full mathematical formulas and tensor specifications, see [`models/README.md`](models/README.md).
-
----
-
-## Raspberry Pi 5 Hardware Setup
-
-### Wiring Diagram for Physical Cabin Alerts
-
-Connect a 5V/3.3V Active Buzzer and Warning LED to the Raspberry Pi 5 40-pin GPIO header:
-
-| Component | Component Pin | Raspberry Pi 5 Header Pin | BCM GPIO Number |
-| :--- | :--- | :--- | :--- |
-| **Active Buzzer** | Positive (`+` / Signal) | Pin 11 | **GPIO 17** |
-| | Negative (`-` / GND) | Pin 9 / 14 / 20 | **GND** |
-| **Warning LED** | Anode (`+` via 330Ω resistor) | Pin 13 | **GPIO 27** |
-| | Cathode (`-` / GND) | Pin 9 / 14 / 20 | **GND** |
-| **Camera** | USB Cable / CSI Ribbon | USB 3.0 Port or CAM 0 / CAM 1 | `/dev/video0` |
-
-### Alert Trigger Patterns
-
-- **NORMAL (`Score < 30`)**: Buzzer OFF, LED OFF.
-- **ATTENTION (`Score 30–49`)**: Gentle visual LED pulse, Buzzer OFF.
-- **DROWSY (`Score 50–69`)**: Distinct double chirp warning beep (`120ms beep` + `100ms pause` + `120ms beep`), LED flashing.
-- **CRITICAL / MICROSLEEP (`Score >= 70`)**: Continuous urgent audible alarm + solid/strobe LED alert.
+### ESP32 ➔ Raspberry Pi 5 Serial (UART)
+Connect the ESP32 to the Raspberry Pi 5 UART header or USB serial port:
+- **ESP32 TX (GPIO 1)** ➔ **Raspberry Pi 5 RX (GPIO 15 / `/dev/serial0`)**
+- **ESP32 RX (GPIO 3)** ➔ **Raspberry Pi 5 TX (GPIO 14 / `/dev/serial0`)**
+- **Common Ground**: Connect ESP32 `GND` to Raspberry Pi 5 `GND`.
+- **Baud Rate**: **115200 bps**
 
 ---
 
-## Quickstart Guide for Raspberry Pi 5
+## 3. 100 Hz Real-Time JSON Payload Specification
 
-### 1. Automated Installation (1-Click)
+Every 10 milliseconds (100 Hz), the Raspberry Pi 5 Sensor Fusion Engine combines all inputs and broadcasts this standardized JSON payload:
 
-Clone the repository directly onto your Raspberry Pi 5:
+```json
+{
+  "device_id": "truck_esp32_01",
+  "timestamp": "2025-06-12T10:39:45Z",
+  "imu": {
+    "accel_x": 0.12,
+    "accel_y": -0.03,
+    "accel_z": 9.81,
+    "gyro_x": 0.5,
+    "gyro_y": -0.2,
+    "gyro_z": 0.1,
+    "roll": 1.2,
+    "pitch": -0.8,
+    "yaw": 45.6
+  },
+  "fuel": {
+    "distance_cm": 15.3,
+    "level_percent": 68.0,
+    "volume_litres": 102.0
+  },
+  "rfid": {
+    "card_id": "A3F892B1",
+    "driver_name": "John Doe",
+    "authenticated": true
+  },
+  "fatigue": {
+    "score": 12,
+    "state": "NORMAL",
+    "ear_left": 0.27,
+    "ear_right": 0.26,
+    "mar": 0.07,
+    "blinks": 18,
+    "yawns": 0
+  },
+  "gps": {
+    "latitude": 12.9716,
+    "longitude": 77.5946,
+    "speed_kmh": 68.0,
+    "heading": 45.0
+  },
+  "events": {
+    "driving_state": "normal",
+    "latest_event": "none"
+  },
+  "status": "ok"
+}
+```
 
+---
+
+## 4. The 4 ONNX Fatigue Neural Networks
+
+Stored in [`models/`](models/):
+
+| Model | Task | Input Shape | Tensor Range | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| **`version-slim-320.onnx`** | Face Detection | `[1, 3, 240, 320]` | `[-1.0, 1.0]` | Fast bounding box localization |
+| **`PFLD_GhostOne_112_1_opt_sim.onnx`** | 98 Facial Landmarks | `[1, 3, 112, 112]` | `[0.0, 1.0]` | WFLW 98 keypoint regression |
+| **`eye_model.onnx`** | Eye State Classifier | `[1, 3, 64, 64]` | `[0.0, 1.0]` | Classifies eye closure |
+| **`mouth_model.onnx`** | Mouth / Yawn Classifier | `[1, 3, 64, 64]` | `[0.0, 1.0]` | Classifies yawning and open mouth |
+
+Pipeline throughput on Raspberry Pi 5: **~10.4 ms total latency (~96 FPS)** using ARM NEON SIMD acceleration.
+
+---
+
+## 5. Quickstart & Deployment
+
+### Step 1: Flash ESP32 Firmware
+1. Open [`firmware/esp32_sensor_hub.ino`](firmware/esp32_sensor_hub.ino) in Arduino IDE.
+2. Install libraries via Library Manager:
+   - `Adafruit BNO08x`
+   - `MFRC522`
+   - `ArduinoJson` (v6 or v7)
+3. Select board `DOIT ESP32 DEVKIT V1` and upload.
+
+### Step 2: Set Up Raspberry Pi 5
 ```bash
 git clone https://github.com/dganeshsci-commits/fatigue-model-for-truck.git
 cd fatigue-model-for-truck
@@ -116,162 +164,35 @@ chmod +x scripts/install.sh
 ./scripts/install.sh
 ```
 
-The script automatically installs system dependencies (`libgl1`, `libglib2.0-0`, `v4l-utils`), builds a Python virtual environment, installs dependencies, and runs an automated self-test on all 4 models.
-
----
-
-### 2. Manual Installation
-
-```bash
-# 1. Install system prerequisites on Raspberry Pi OS 64-bit (Bookworm)
-sudo apt-get update
-sudo apt-get install -y python3-venv python3-pip libgl1 libglib2.0-0 v4l-utils
-
-# 2. Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Install dependencies
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# 4. Run diagnostic benchmark
-python scripts/test_inference.py
-```
-
----
-
-## Running the Application
-
-### Option A: Standalone In-Cabin Monitor (`edge_runner.py`)
-
-Run directly on the Pi 5 connected to a cabin screen and buzzer:
-
+### Step 3: Run Central 100 Hz Processing Hub
 ```bash
 source venv/bin/activate
-
-# With live HDMI Heads-Up Display (HUD)
-python edge_runner.py --camera 0
-
-# Headless mode for embedded truck installations (no monitor required)
-python edge_runner.py --headless --camera 0
-
-# Sync real-time events to your central Truck Intelligence Hub
-python edge_runner.py --headless --dashboard-url http://192.168.1.100:3000
-```
-
-### Option B: REST API & Live Video Stream Server (`app.py`)
-
-Run the edge HTTP API server so other systems or the **FleetLogix Truck Intelligence Hub** can connect remotely:
-
-```bash
-source venv/bin/activate
-python app.py
+python hub_server.py
 ```
 - Server starts on `http://0.0.0.0:5000`
-- Live MJPEG video stream with HUD: `http://<pi-ip>:5000/camera_feed`
-- Real-time status & hardware telemetry: `http://<pi-ip>:5000/api/status`
-- Health check: `http://<pi-ip>:5000/api/health`
-- Base64 frame inference: `POST http://<pi-ip>:5000/api/predict`
+- 100 Hz Fused JSON Endpoint: `GET http://<pi_ip>:5000/api/telemetry/latest`
+- Live MJPEG Camera Stream with HUD: `GET http://<pi_ip>:5000/camera_feed`
+- Phone GPS Ingestion: `POST http://<pi_ip>:5000/api/gps`
+- Historical Reports: `GET http://<pi_ip>:5000/api/telemetry/history`
+
+### Step 4: Run Standalone In-Cabin ADAS Display
+```bash
+python edge_runner.py --camera 0 --esp32-port /dev/serial0
+```
 
 ---
 
-## Integration with FleetLogix Truck Intelligence Hub
-
-The REST API is **100% drop-in compatible** with the Truck Intelligence Hub dashboard:
-
-1. Open your Truck Intelligence Hub at `http://localhost:3000`.
-2. Navigate to **Driver Monitoring**.
-3. Under the camera controls, select **"Raspberry Pi 5 Live"**.
-4. Enter your Raspberry Pi 5 IP address (e.g. `http://192.168.1.50:5000`).
-5. The dashboard will automatically stream live fatigue predictions, EAR/MAR metrics, blink rate, and cabin alerts over Wi-Fi in real time!
-
----
-
-## Systemd Autostart Service (Truck Boot Deployment)
-
-Configure the detector to automatically launch when the truck's engine starts:
+## 6. Systemd Auto-Start (Launch on Truck Boot)
 
 ```bash
-# 1. Copy service file
 sudo cp systemd/truck-fatigue.service /etc/systemd/system/
-
-# 2. Reload and enable service
 sudo systemctl daemon-reload
 sudo systemctl enable --now truck-fatigue.service
-
-# 3. Check live status and logs
 sudo systemctl status truck-fatigue.service
-journalctl -u truck-fatigue.service -f
 ```
 
 ---
 
-## Docker Deployment
+## 7. License
 
-You can also run the system as an isolated Docker container on Raspberry Pi 5:
-
-```bash
-cd docker
-docker compose up -d
-```
-
----
-
-## Performance Benchmarks on Raspberry Pi 5
-
-Measured on **Raspberry Pi 5 (Broadcom BCM2712 Quad-Core Cortex-A76 @ 2.4GHz)**:
-
-| Metric | Measurement |
-| :--- | :--- |
-| **Model 1: Face Detection** | ~4.2 ms |
-| **Model 2: Landmark Regression (PFLD 98 pts)** | ~3.8 ms |
-| **Model 3: Eye State Classification** | ~1.1 ms |
-| **Model 4: Mouth State Classification** | ~1.1 ms |
-| **Total Pipeline Latency** | **~10.4 ms** |
-| **Inference Throughput** | **~45 – 95 FPS** (Easily exceeds 30 FPS camera limit) |
-| **SoC CPU Temperature** | ~48°C – 54°C (With official active cooler) |
-| **RAM Consumption** | ~140 MB |
-
----
-
-## Repository Structure
-
-```
-fatigue-model-for-truck/
-├── models/                               # The 4 separate ONNX models
-│   ├── version-slim-320.onnx             # Face detector (RFB-320)
-│   ├── PFLD_GhostOne_112_1_opt_sim.onnx  # 98-point landmark detector
-│   ├── eye_model.onnx                    # Eye classifier
-│   ├── mouth_model.onnx                  # Mouth classifier
-│   └── README.md                         # Detailed tensor documentation
-├── src/                                  # Core Python modules
-│   ├── detector.py                       # ONNX inference pipeline
-│   ├── tracker.py                        # Temporal fatigue state machine
-│   ├── utils.py                          # Letterboxing, EAR, MAR, HUD overlay
-│   ├── gpio_alert.py                     # Pi 5 GPIO buzzer & LED driver
-│   ├── camera.py                         # Zero-latency threaded camera capture
-│   └── telemetry.py                      # Pi 5 CPU temperature & load monitor
-├── edge_runner.py                        # Standalone cabin ADAS application
-├── app.py                                # Flask REST API & MJPEG server
-├── scripts/
-│   ├── install.sh                        # 1-click Raspberry Pi OS installer
-│   ├── test_inference.py                 # Diagnostic model self-test & benchmark
-│   └── test_camera.py                    # Video device diagnostic tool
-├── systemd/
-│   ├── truck-fatigue.service             # Systemd autostart unit file
-│   └── README.md                         # Service setup instructions
-├── docker/
-│   ├── Dockerfile                        # ARM64 Docker container definition
-│   └── docker-compose.yml                # Docker Compose with video & GPIO
-├── requirements.txt                      # Dependencies for Raspberry Pi 5
-├── .gitignore
-├── LICENSE                               # MIT License
-└── README.md
-```
-
----
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) for details.
